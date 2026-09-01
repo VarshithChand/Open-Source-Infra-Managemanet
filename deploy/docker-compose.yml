@@ -1,0 +1,296 @@
+name: forge-stack
+
+# Base stack — plain HTTP, routed by hostname via Traefik.
+# Works as-is against DOMAIN=localhost (see .env.example).
+# For a VM with a real domain and TLS, layer docker-compose.tls.yml on top:
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  edge:
+    name: forge-edge
+  internal:
+    name: forge-internal
+    internal: true
+
+volumes:
+  traefik-certs:
+  forgejo-data:
+  postgres-data:
+  woodpecker-server-data:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:
+  portainer-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  minio-data:
+
+services:
+  # ---------------------------------------------------------------- edge
+  traefik:
+    image: traefik:v3.7.12
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=forge-edge
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=web
+      - --log.level=INFO
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    networks: [edge]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.traefik.service=api@internal
+      - traefik.http.routers.traefik.middlewares=traefik-auth
+      - traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}
+
+  # ---------------------------------------------------------------- shared postgres (forgejo + sonarqube databases)
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_MULTIPLE_DATABASES: >-
+        ${FORGEJO_DB_NAME}:${FORGEJO_DB_USER}:${FORGEJO_DB_PASSWORD},
+        ${SONARQUBE_DB_NAME}:${SONARQUBE_DB_USER}:${SONARQUBE_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------- delivery: git hosting
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:16
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: postgres:5432
+      FORGEJO__database__NAME: ${FORGEJO_DB_NAME}
+      FORGEJO__database__USER: ${FORGEJO_DB_USER}
+      FORGEJO__database__PASSWD: ${FORGEJO_DB_PASSWORD}
+      FORGEJO__server__DOMAIN: forgejo.${DOMAIN}
+      FORGEJO__server__ROOT_URL: http://forgejo.${DOMAIN}/
+      FORGEJO__server__HTTP_PORT: 3000
+      FORGEJO__metrics__ENABLED: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+    volumes:
+      - forgejo-data:/data
+    networks: [edge, internal]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.forgejo.rule=Host(`forgejo.${DOMAIN}`)
+      - traefik.http.services.forgejo.loadbalancer.server.port=3000
+
+  # ---------------------------------------------------------------- delivery: CI/CD
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v3.18.0
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on: [forgejo]
+    environment:
+      WOODPECKER_OPEN: "false"
+      WOODPECKER_HOST: http://ci.${DOMAIN}
+      WOODPECKER_SERVER_ADDR: ":8000"
+      WOODPECKER_GRPC_ADDR: ":9000"
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
+      WOODPECKER_FORGEJO: "true"
+      WOODPECKER_FORGEJO_URL: http://forgejo.${DOMAIN}
+      WOODPECKER_FORGEJO_CLIENT: ${WOODPECKER_FORGEJO_CLIENT}
+      WOODPECKER_FORGEJO_SECRET: ${WOODPECKER_FORGEJO_SECRET}
+    volumes:
+      - woodpecker-server-data:/var/lib/woodpecker
+    networks: [edge, internal]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.woodpecker.rule=Host(`ci.${DOMAIN}`)
+      - traefik.http.services.woodpecker.loadbalancer.server.port=8000
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v3.18.0
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on: [woodpecker-server]
+    command: agent
+    environment:
+      WOODPECKER_SERVER: woodpecker-server:9000
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET}
+      WOODPECKER_MAX_WORKFLOWS: 2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [internal]
+
+  # ---------------------------------------------------------------- delivery: code quality
+  sonarqube:
+    image: sonarqube:community
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/${SONARQUBE_DB_NAME}
+      SONAR_JDBC_USERNAME: ${SONARQUBE_DB_USER}
+      SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    networks: [edge, internal]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.sonarqube.rule=Host(`sonar.${DOMAIN}`)
+      - traefik.http.services.sonarqube.loadbalancer.server.port=9000
+
+  # ---------------------------------------------------------------- runtime: deployment manager
+  portainer:
+    image: portainer/portainer-ce:2.45.0
+    restart: unless-stopped
+    logging: *default-logging
+    command: -H unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+    networks: [edge]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.portainer.rule=Host(`ops.${DOMAIN}`)
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
+
+  # ---------------------------------------------------------------- runtime: object storage
+  # MinIO's public Docker Hub image stopped receiving new tags after their
+  # 2025 licensing change; this is the last publicly available release.
+  # Fine for a reference/portfolio deployment — re-evaluate before using
+  # this as a starting point for anything production.
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    networks: [edge, internal]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.minio-api.rule=Host(`storage.${DOMAIN}`)
+      - traefik.http.services.minio-api.loadbalancer.server.port=9000
+      - traefik.http.routers.minio-console.rule=Host(`storage-console.${DOMAIN}`)
+      - traefik.http.services.minio-console.loadbalancer.server.port=9001
+
+  # ---------------------------------------------------------------- observability: metrics sources
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    networks: [internal]
+    pid: host
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.60.5
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [internal]
+
+  # ---------------------------------------------------------------- observability: metrics
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+    networks: [internal]
+
+  # ---------------------------------------------------------------- observability: logs
+  loki:
+    image: grafana/loki:3.7.7
+    restart: unless-stopped
+    logging: *default-logging
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    networks: [internal]
+
+  # Promtail reached end-of-life in March 2026 — no further updates, but the
+  # last release still runs fine and is what docs/tools/logging.md and the
+  # resume framing are built around. Grafana Alloy is the maintained
+  # successor; swapping to it is a documented follow-up, not done here.
+  promtail:
+    image: grafana/promtail:3.6.11
+    restart: unless-stopped
+    logging: *default-logging
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [internal]
+    depends_on: [loki]
+
+  # ---------------------------------------------------------------- observability: dashboards
+  grafana:
+    image: grafana/grafana:13.1.4
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on: [prometheus, loki]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: http://grafana.${DOMAIN}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [edge, internal]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)
+      - traefik.http.services.grafana.loadbalancer.server.port=3000

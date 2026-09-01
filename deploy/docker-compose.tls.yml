@@ -1,0 +1,92 @@
+name: forge-stack
+
+# TLS overlay — layer on top of docker-compose.yml when deploying to a VM
+# with a real domain pointed at it and ports 80+443 open to the internet:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# Adds a websecure (443) entrypoint, automatic Let's Encrypt certificates via
+# the HTTP-01 challenge, and an HTTP -> HTTPS redirect on every router.
+# Not used for local (`DOMAIN=localhost`) deployments — Let's Encrypt cannot
+# issue certificates for .localhost.
+
+services:
+  traefik:
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=forge-edge
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --api.dashboard=true
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=web
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.traefik.service=api@internal
+      - traefik.http.routers.traefik.middlewares=traefik-auth
+      - traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}
+      - traefik.http.routers.traefik.entrypoints=websecure
+      - traefik.http.routers.traefik.tls.certresolver=le
+
+  forgejo:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.forgejo.rule=Host(`forgejo.${DOMAIN}`)
+      - traefik.http.services.forgejo.loadbalancer.server.port=3000
+      - traefik.http.routers.forgejo.entrypoints=websecure
+      - traefik.http.routers.forgejo.tls.certresolver=le
+
+  woodpecker-server:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.woodpecker.rule=Host(`ci.${DOMAIN}`)
+      - traefik.http.services.woodpecker.loadbalancer.server.port=8000
+      - traefik.http.routers.woodpecker.entrypoints=websecure
+      - traefik.http.routers.woodpecker.tls.certresolver=le
+
+  sonarqube:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.sonarqube.rule=Host(`sonar.${DOMAIN}`)
+      - traefik.http.services.sonarqube.loadbalancer.server.port=9000
+      - traefik.http.routers.sonarqube.entrypoints=websecure
+      - traefik.http.routers.sonarqube.tls.certresolver=le
+
+  portainer:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.portainer.rule=Host(`ops.${DOMAIN}`)
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
+      - traefik.http.routers.portainer.entrypoints=websecure
+      - traefik.http.routers.portainer.tls.certresolver=le
+
+  minio:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.minio-api.rule=Host(`storage.${DOMAIN}`)
+      - traefik.http.services.minio-api.loadbalancer.server.port=9000
+      - traefik.http.routers.minio-api.entrypoints=websecure
+      - traefik.http.routers.minio-api.tls.certresolver=le
+      - traefik.http.routers.minio-console.rule=Host(`storage-console.${DOMAIN}`)
+      - traefik.http.services.minio-console.loadbalancer.server.port=9001
+      - traefik.http.routers.minio-console.entrypoints=websecure
+      - traefik.http.routers.minio-console.tls.certresolver=le
+
+  grafana:
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)
+      - traefik.http.services.grafana.loadbalancer.server.port=3000
+      - traefik.http.routers.grafana.entrypoints=websecure
+      - traefik.http.routers.grafana.tls.certresolver=le
