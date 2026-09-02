@@ -118,6 +118,7 @@ services:
     depends_on: [forgejo]
     environment:
       WOODPECKER_OPEN: "false"
+      WOODPECKER_ADMIN: ${WOODPECKER_ADMIN}
       WOODPECKER_HOST: http://ci.${DOMAIN}
       WOODPECKER_SERVER_ADDR: ":8000"
       WOODPECKER_GRPC_ADDR: ":9000"
