@@ -22,7 +22,22 @@ This brings up every service except Harbor (installed separately — see [harbor
   (Docker Desktop's Linux VM already ships with this set — nothing to do locally.)
 - At least 8 GB RAM free for the base stack; SonarQube alone wants ~2 GB.
 
-## 1. Configure
+## Quickstart
+
+```bash
+cd deploy
+./setup.sh <your-domain>     # or ./setup.sh localhost for a no-DNS local test
+```
+
+That's the whole "clone it, run it" path: it generates every credential (alphanumeric only, deliberately — every `$`-in-password bug hit building this platform traces back to a literal `$` getting mangled by some layer of templating, so scripted secrets just don't use one), sets `vm.max_map_count`, and brings up Traefik, Postgres, Forgejo, SonarQube, Portainer, MinIO, the full observability stack, and the backup job — waiting for each to actually be healthy before moving on, not just started.
+
+What it prints at the end, and what the rest of this document explains in more depth, is the part that **can't** be scripted away: five tools (Forgejo, Woodpecker, SonarQube, Harbor, Portainer) each require at least one first-run step through their own UI — an admin account, an OAuth registration, a generated token. That's inherent to those tools, not a gap in this repo. The steps below are what `setup.sh` tells you to do next; read them here for the full explanation of *why* each one is what it is, or just follow the script's own output.
+
+## Manual steps (what the script hands off to you)
+
+If you'd rather not run a script sight-unseen, or want to understand each piece before automating it, here's the same path by hand.
+
+### 1. Configure
 
 ```bash
 cd deploy
@@ -38,7 +53,7 @@ htpasswd -nB admin
 
 Leave `WOODPECKER_FORGEJO_CLIENT` / `WOODPECKER_FORGEJO_SECRET` blank for now — they don't exist until step 3.
 
-## 2. Bring up everything except Woodpecker
+### 2. Bring up everything except Woodpecker
 
 Forgejo has to exist before Woodpecker can authenticate against it, so bring the rest of the stack up first:
 
@@ -56,7 +71,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d \
 
 Watch `docker compose logs -f forgejo` until it reports it's listening, then open `http://forgejo.<DOMAIN>/` and complete the first-run install screen (it pre-fills the Postgres connection from the environment — just set the admin account).
 
-## 3. Register Woodpecker as an OAuth app in Forgejo
+### 3. Register Woodpecker as an OAuth app in Forgejo
 
 In Forgejo: **Settings → Applications → Manage OAuth2 Applications → Create a new OAuth2 Application**
 
@@ -71,11 +86,11 @@ docker compose up -d woodpecker-server woodpecker-agent
 
 Open `http://ci.<DOMAIN>/` and sign in with **Login via Forgejo** — this is the OAuth flow you just registered.
 
-## 4. Generate a SonarQube token
+### 4. Generate a SonarQube token
 
 Log into `http://sonar.<DOMAIN>/` (default `admin` / `admin`, changed on first login), then **My Account → Security → Generate Token**. Store it as a Woodpecker secret (`SONAR_TOKEN`) on whichever repo's pipeline runs the quality-gate step from `docs/setup.md`.
 
-## 5. Install Harbor
+### 5. Install Harbor
 
 Follow [harbor/README.md](harbor/README.md) — it's a separate installer that then joins the same `forge-edge` network Traefik already watches.
 

@@ -1,0 +1,18 @@
+# Real secrets and instance-specific state -- never commit these.
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+deploy/dns-records.txt
+
+# Harbor's installer downloads a tarball and generates its own config
+# (harbor.yml, docker-compose.yml, common/) directly into deploy/harbor/ --
+# all of it either contains real credentials or is a redistributable
+# vendor download, neither of which belongs in this repo. Only the
+# hand-written README should ever be tracked from that directory.
+deploy/harbor/*
+!deploy/harbor/README.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+node_modules/
