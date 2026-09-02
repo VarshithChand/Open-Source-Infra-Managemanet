@@ -72,10 +72,12 @@ Generates every credential, raises `vm.max_map_count`, and brings up the base st
 
 ## Documentation
 
+- **[STEP-BY-STEP.md](STEP-BY-STEP.md)** — start here if you're doing this from scratch: VM sizing (RAM/vCPU/disk, with reasoning), OS install, every Docker command, and the connection/access table at the end
 - [Architecture](docs/architecture.md) — how the nine services connect, data flow, network topology
 - [Setup approach](docs/setup.md) — deployment model and what's in `deploy/`
 - [deploy/README.md](deploy/README.md) — the actual bring-up steps, bootstrap order, and access URLs
 - Per-tool docs — see the table above, or browse [docs/tools/](docs/tools/)
+- [Wiki](https://github.com/VarshithChand/Open-Source-Infra-Managemanet/wiki) — same content, browsable, plus a dedicated [Real World Gotchas](https://github.com/VarshithChand/Open-Source-Infra-Managemanet/wiki/Real-World-Gotchas) page
 
 ## What this project demonstrates
 
