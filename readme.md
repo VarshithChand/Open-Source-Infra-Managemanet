@@ -65,12 +65,10 @@ Full write-up: [docs/architecture.md](docs/architecture.md)
 
 ```bash
 cd deploy
-cp .env.example .env    # set DOMAIN + every credential — see comments inline
-docker compose up -d traefik postgres forgejo sonarqube portainer minio \
-  node-exporter cadvisor prometheus loki promtail grafana
+./setup.sh <your-domain>   # or ./setup.sh localhost for a no-DNS local test
 ```
 
-Works as-is with `DOMAIN=localhost` on a local Docker install, or `DOMAIN=example.com` plus `docker-compose.tls.yml` on a VM for automatic HTTPS. Woodpecker and Harbor need two short manual steps (an OAuth app registration and a separate installer, respectively) — full walkthrough and the access-URL table for every service: [`deploy/README.md`](deploy/README.md).
+Generates every credential, raises `vm.max_map_count`, and brings up the base stack in dependency order with real health-check waits — then prints exactly what's left. What's left is inherent to five tools' own first-run flows (Forgejo, Woodpecker, SonarQube, Harbor, Portainer each need one setup step through their own UI) and can't be scripted away; the script tells you each one in order. Full walkthrough, the manual version of every step, and the access-URL table: [`deploy/README.md`](deploy/README.md).
 
 ## Documentation
 
@@ -116,6 +114,7 @@ Works as-is with `DOMAIN=localhost` on a local Docker install, or `DOMAIN=exampl
 │   └── test/
 └── deploy/
     ├── README.md               quickstart, bootstrap steps, access URLs
+    ├── setup.sh                 one-command bootstrap: generates secrets, brings the base stack up healthy
     ├── docker-compose.yml      base stack (HTTP, DOMAIN=localhost-ready)
     ├── docker-compose.tls.yml  overlay for a VM deployment (HTTPS via Let's Encrypt)
     ├── .env.example
