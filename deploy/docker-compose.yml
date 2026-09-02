@@ -128,6 +128,10 @@ services:
       WOODPECKER_FORGEJO_URL: http://forgejo.${DOMAIN}
       WOODPECKER_FORGEJO_CLIENT: ${WOODPECKER_FORGEJO_CLIENT}
       WOODPECKER_FORGEJO_SECRET: ${WOODPECKER_FORGEJO_SECRET}
+      # Woodpecker 3.x runs plugins unprivileged by default; docker-buildx
+      # needs privileged execution to actually build images, so it has to
+      # be explicitly allow-listed here rather than in any pipeline file.
+      WOODPECKER_PLUGINS_PRIVILEGED: woodpeckerci/plugin-docker-buildx
     volumes:
       - woodpecker-server-data:/var/lib/woodpecker
     networks: [edge, internal]
