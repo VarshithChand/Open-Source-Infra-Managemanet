@@ -78,10 +78,12 @@ Standing the stack up follows a dependency order — this is what `deploy/README
 3. **Woodpecker** — needs an OAuth2 application registered in Forgejo first (manual, one-time — Forgejo has no API for this that doesn't require an existing session)
 4. **SonarQube** — generate a token once logged in, store it as a Woodpecker secret
 5. **Harbor** — installed separately, then registered as Woodpecker's push target via a robot account
-6. **Portainer** — its per-stack redeploy webhook is registered as a Woodpecker secret once the target stack exists
+6. **Portainer** — deploys the application stack Woodpecker builds and pushes to. Its Community Edition does **not** support stack webhooks (that's a Business Edition feature — confirmed by deploying against it, not assumed from docs); auto-redeploy-on-push needs either upgrading to Business Edition or having the `deploy` pipeline step call Portainer's regular API with an access token instead of a webhook URL.
 7. **Prometheus / node-exporter / cadvisor / Loki / Promtail / Grafana** — no dependency on anything above, so these can come up in step 1 alongside Traefik and start capturing data from everything else as it boots
-8. **MinIO** — backup target, needed whenever backup jobs are configured
+8. **MinIO** — backup target for the `backup` service below
 
 ## Backups
 
-Every stateful service — the shared Postgres instance (Forgejo + SonarQube), Harbor's own database, and Grafana's SQLite state — is dumped on a nightly cron and pushed to a MinIO bucket with versioning enabled, giving point-in-time recovery without any external dependency.
+The `backup` service ([`deploy/postgres/backup.sh`](../deploy/postgres/backup.sh)) dumps every database on the shared Postgres instance (Forgejo, SonarQube) and uploads each to a versioned MinIO bucket (`db-backups`), giving point-in-time recovery without any external dependency. It runs once immediately on container start — so a fresh deploy has a backup within minutes, not after the first interval elapses — then repeats every `BACKUP_INTERVAL_SECONDS` (default 24h). That's a fixed-duration sleep loop, not wall-clock-pinned like real cron; fine for a reference deployment, worth swapping for actual cron scheduling if backup timing needs to be predictable.
+
+Harbor's own database and Grafana's state aren't covered by this job — Harbor manages its own backup story separately (see [Harbor's docs](https://goharbor.io/docs/) for `harbor-db` backup/restore), and Grafana's SQLite file is low-stakes enough (dashboards are reproducible from the JSON in this repo) that it's not currently backed up.

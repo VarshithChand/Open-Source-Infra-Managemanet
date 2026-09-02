@@ -220,6 +220,32 @@ services:
       - traefik.http.routers.minio-console.service=minio-console
       - traefik.http.services.minio-console.loadbalancer.server.port=9001
 
+  # Nightly dump of every database on the shared Postgres instance, uploaded
+  # to a MinIO bucket. Runs once immediately on start, then on the interval
+  # below -- a fixed-duration sleep loop, not wall-clock-pinned like real
+  # cron, which is a known simplification worth revisiting for anything
+  # beyond a reference deployment.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_SUPERUSER}
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      BACKUP_INTERVAL_SECONDS: "86400"
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    volumes:
+      - ./postgres/backup.sh:/backup.sh:ro
+    networks: [internal]
+
   # ---------------------------------------------------------------- observability: metrics sources
   node-exporter:
     image: prom/node-exporter:v1.12.1
