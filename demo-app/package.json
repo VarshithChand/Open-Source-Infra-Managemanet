@@ -1,0 +1,11 @@
+{
+  "name": "forge-stack-demo-app",
+  "version": "1.0.0",
+  "description": "Minimal zero-dependency app used to prove the Forge Stack CI/CD path end to end",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

@@ -31,43 +31,14 @@ deploy/
 
 Harbor is deliberately not in the main compose file — its own installer generates a multi-container `docker-compose.yml` from a `harbor.yml` config (core, portal, registry, jobservice, Trivy, its own Postgres, and an nginx front door). Hand-rolling that into the main stack would fight Harbor's lifecycle tooling, so it's installed as its own unit and then joined to the same `forge-edge` network Traefik already watches. Full steps: [`deploy/harbor/README.md`](../deploy/harbor/README.md).
 
-## Example CI pipeline (`.woodpecker.yml`)
+## CI pipeline — a real, working example
 
-```yaml
-steps:
-  test:
-    image: node:20
-    commands:
-      - npm ci
-      - npm test
+[`demo-app/.woodpecker.yml`](../demo-app/.woodpecker.yml) is not a hand-written illustration — it's the actual pipeline file for the sample app that proves this platform's CI/CD path, verified working end to end (test → SonarQube quality gate → build → push to Harbor, Trivy-scanned). Two details worth calling out if you're writing your own from scratch:
 
-  code-quality:
-    image: sonarsource/sonar-scanner-cli
-    commands:
-      - sonar-scanner -Dsonar.host.url=$SONAR_HOST -Dsonar.login=$SONAR_TOKEN
+- **`woodpeckerci/plugin-docker-buildx`**, not the older `plugins/docker` — and it needs `WOODPECKER_PLUGINS_PRIVILEGED` set on the server (already in `deploy/docker-compose.yml`) or the build step fails at lint time.
+- Secret names are **lowercase** (`SONAR_TOKEN` is the one exception, kept uppercase to match what actually got created — Woodpecker secret names are whatever you named them, no forced casing, so just be consistent between where you create them and where `.woodpecker.yml` references them).
 
-  build-and-push:
-    image: plugins/docker
-    settings:
-      registry: registry.${DOMAIN}
-      repo: registry.${DOMAIN}/team/app
-      username:
-        from_secret: docker_username
-      password:
-        from_secret: docker_password
-      tags: [latest, "${CI_COMMIT_SHA:0:8}"]
-    when:
-      branch: main
-
-  deploy:
-    image: curlimages/curl
-    commands:
-      - curl -X POST "$PORTAINER_WEBHOOK_URL"
-    when:
-      branch: main
-```
-
-`SONAR_TOKEN`, `docker_username`/`docker_password` (a Harbor robot account, not the admin login), and `PORTAINER_WEBHOOK_URL` are stored as Woodpecker secrets — see `deploy/README.md` steps 4–5 for where each one comes from.
+The `deploy` step (Portainer redeploy) is deliberately commented out in that file — see [`demo-app/README.md`](../demo-app/README.md) for why (Portainer Community Edition doesn't support stack webhooks) and what redeploying by hand actually looks like.
 
 ## Bootstrap order
 

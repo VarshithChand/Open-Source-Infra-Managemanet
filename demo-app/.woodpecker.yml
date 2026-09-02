@@ -1,0 +1,53 @@
+steps:
+  test:
+    image: node:20-alpine
+    commands:
+      - npm test
+    when:
+      event: [push, manual]
+
+
+  
+  code-quality:
+    image: sonarsource/sonar-scanner-cli
+    environment:
+      SONAR_TOKEN:
+        from_secret: SONAR_TOKEN
+    commands:
+      - >-
+        sonar-scanner
+        -Dsonar.host.url=https://sonar.deploymentportal.in
+        -Dsonar.token=$SONAR_TOKEN
+        -Dsonar.projectKey=Forge-Stack-Demo-App
+        -Dsonar.sources=.
+        -Dsonar.exclusions=test/**
+    when:
+      event: [push, manual]
+
+  build-and-push:
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      repo: registry.deploymentportal.in/demo/forge-stack-demo-app
+      registry: registry.deploymentportal.in
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+      tags:
+        - latest
+        - ${CI_COMMIT_SHA:0:8}
+    when:
+      event: [push, manual]
+      branch: main
+  # testing 
+  # deploy step comes back once a Portainer stack + webhook exist for this app:
+  # deploy:
+  #   image: curlimages/curl
+  #   commands:
+  #     - curl -X POST "$PORTAINER_WEBHOOK_URL"
+  #   environment:
+  #     PORTAINER_WEBHOOK_URL:
+  #       from_secret: portainer_webhook_url
+  #   when:
+  #     event: [push, manual]
+  #     branch: main

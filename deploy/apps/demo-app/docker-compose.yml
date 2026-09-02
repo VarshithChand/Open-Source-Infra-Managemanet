@@ -1,0 +1,34 @@
+# Deployment stack for the sample application that proves the platform's
+# CI/CD path end to end (source: a separate Forgejo-hosted repo, built and
+# pushed here by the demo app's own .woodpecker.yml — see
+# docs/demo-app.md in the main repo for the full loop).
+#
+# Deployed via Portainer → Stacks → Add stack → Web editor, pasting this
+# file directly (Portainer Community Edition has no Git-repo stack sync,
+# so this file is the source of truth kept in version control; paste it
+# into Portainer by hand after any change). Requires a "harbor" custom
+# registry already configured in Portainer (Registries → Add registry →
+# Custom registry → registry.${DOMAIN}, authenticated with a Harbor robot
+# account scoped to this project) so the private image can be pulled.
+services:
+  demo-app:
+    image: registry.${DOMAIN}/demo/forge-stack-demo-app:latest
+    # Portainer CE's registry-auth injection for web-editor stacks proved
+    # unreliable in practice (see docs/demo-app.md) -- pull_policy: never
+    # sidesteps it entirely. Pull the image manually on the host first
+    # (`docker pull ...`), which authenticates correctly via `docker login`,
+    # then this just runs whatever is already cached locally.
+    pull_policy: never
+    restart: unless-stopped
+    networks:
+      - forge-edge
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.demo-app.rule=Host(`demo.${DOMAIN}`)
+      - traefik.http.routers.demo-app.entrypoints=websecure
+      - traefik.http.routers.demo-app.tls.certresolver=le
+      - traefik.http.services.demo-app.loadbalancer.server.port=3000
+
+networks:
+  forge-edge:
+    external: true

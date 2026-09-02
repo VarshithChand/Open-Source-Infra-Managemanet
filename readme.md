@@ -4,7 +4,7 @@ A reference architecture and documentation project for a fully open-source, self
 
 **[View the project page →](https://claude.ai/code/artifact/d5dbd790-a258-4131-88b8-10c0b587a2c4)**
 
-> **Status:** Deployed and proven, not just documented. Every config in [`deploy/`](deploy/) has been run for real on a VM: all nine services are up behind Traefik with real TLS certificates, and a small demo application has been pushed through the full pipeline end to end — Forgejo received the push, Woodpecker ran its tests and triggered a SonarQube quality gate (passed), built a container image, and pushed it to Harbor, where Trivy scanned it for CVEs. Several real bugs surfaced only at deploy time — a stale container registry, an HTTP/HTTPS scheme mismatch breaking OAuth, a Traefik router ambiguity, a Postgres credential reset that silently no-oped against a bind-mounted volume, a CI plugin permissions change — and every one of them is fixed in the config here, not worked around by hand on a server.
+> **Status:** Deployed and proven, not just documented. Every config in [`deploy/`](deploy/) has been run for real on a VM: all nine services are up behind Traefik with real TLS certificates, and a small [demo application](demo-app/) has been pushed through the full pipeline end to end — Forgejo received the push, Woodpecker ran its tests and triggered a SonarQube quality gate (passed), built a container image, and pushed it to Harbor, where Trivy scanned it for CVEs (79 found in the base image, 0 in the app itself — zero dependencies). Several real bugs surfaced only at deploy time — a stale container registry, an HTTP/HTTPS scheme mismatch breaking OAuth, a Traefik router ambiguity, a Postgres credential reset that silently no-oped against a bind-mounted volume, a CI plugin permissions change, a Harbor robot account whose real name didn't match the documented naming convention — and every one of them is fixed in the config here, not worked around by hand on a server. Full account of what broke and how it got fixed: [`demo-app/README.md`](demo-app/README.md) and [`deploy/harbor/README.md`](deploy/harbor/README.md).
 
 ## Why this project
 
@@ -109,15 +109,21 @@ Works as-is with `DOMAIN=localhost` on a local Docker install, or `DOMAIN=exampl
 │       ├── minio.md
 │       ├── sonarqube.md
 │       └── traefik.md
+├── demo-app/                   mirror of the sample app proving the CI/CD path works
+│   ├── README.md                real gotchas hit deploying it, redeploy steps
+│   ├── index.js
+│   ├── .woodpecker.yml          the actual, verified-working pipeline
+│   └── test/
 └── deploy/
     ├── README.md               quickstart, bootstrap steps, access URLs
     ├── docker-compose.yml      base stack (HTTP, DOMAIN=localhost-ready)
     ├── docker-compose.tls.yml  overlay for a VM deployment (HTTPS via Let's Encrypt)
     ├── .env.example
-    ├── postgres/
+    ├── postgres/                includes the nightly Postgres -> MinIO backup job
     ├── prometheus/
     ├── loki/
     ├── promtail/
-    ├── grafana/provisioning/
-    └── harbor/README.md        Harbor's separate installer + network wiring
+    ├── grafana/provisioning/    datasources + a live dashboard, both auto-loaded
+    ├── apps/demo-app/           the demo app's own deployment stack (Portainer)
+    └── harbor/README.md        Harbor's separate installer + real gotchas hit running it
 ```
