@@ -50,6 +50,9 @@ services:
       - traefik.http.routers.forgejo.tls.certresolver=le
 
   woodpecker-server:
+    environment:
+      WOODPECKER_HOST: https://ci.${DOMAIN}
+      WOODPECKER_FORGEJO_URL: https://forgejo.${DOMAIN}
     labels:
       - traefik.enable=true
       - traefik.http.routers.woodpecker.rule=Host(`ci.${DOMAIN}`)
