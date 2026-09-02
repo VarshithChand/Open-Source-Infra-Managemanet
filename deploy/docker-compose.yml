@@ -224,8 +224,11 @@ services:
     networks: [internal]
     pid: host
 
+  # cadvisor moved off gcr.io/cadvisor/cadvisor (stale past v0.55.1) to
+  # ghcr.io/google/cadvisor starting at v0.53.0 — verified against the
+  # registry API directly, not just the GitHub release page.
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.60.5
+    image: ghcr.io/google/cadvisor:v0.60.5
     restart: unless-stopped
     logging: *default-logging
     volumes:
