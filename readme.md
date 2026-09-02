@@ -4,7 +4,7 @@ A reference architecture and documentation project for a fully open-source, self
 
 **[View the project page →](https://claude.ai/code/artifact/d5dbd790-a258-4131-88b8-10c0b587a2c4)**
 
-> **Status:** Reference architecture with a real, deployable stack — every config in [`deploy/`](deploy/) is a working `docker-compose.yml`, not illustrative snippets. It runs unmodified against a local Docker install or a VM with a real domain (see [Deploying](#deploying)); it has not been run in this repo's own history, so treat first boot as the first real test.
+> **Status:** Deployed and proven, not just documented. Every config in [`deploy/`](deploy/) has been run for real on a VM: all nine services are up behind Traefik with real TLS certificates, and a small demo application has been pushed through the full pipeline end to end — Forgejo received the push, Woodpecker ran its tests and triggered a SonarQube quality gate (passed), built a container image, and pushed it to Harbor, where Trivy scanned it for CVEs. Several real bugs surfaced only at deploy time — a stale container registry, an HTTP/HTTPS scheme mismatch breaking OAuth, a Traefik router ambiguity, a Postgres credential reset that silently no-oped against a bind-mounted volume, a CI plugin permissions change — and every one of them is fixed in the config here, not worked around by hand on a server.
 
 ## Why this project
 
@@ -89,6 +89,7 @@ Works as-is with `DOMAIN=localhost` on a local Docker install, or `DOMAIN=exampl
 - Static analysis and code quality gating in a pipeline
 - Trade-off reasoning between self-hosted infrastructure and managed SaaS
 - Writing deployable Docker Compose (networks, secrets, health checks, multi-database Postgres) for a real, multi-service stack — not just diagrams of one
+- Debugging a real deployment under real constraints: DNS propagation and Let's Encrypt rate limits, Traefik router/service ambiguity, OAuth redirect-URI mismatches, a Postgres credential reset that silently no-oped against a bind-mounted volume instead of a Docker-managed one, and a CI platform's default security posture blocking a build step until explicitly allow-listed
 
 ## Repo structure
 
